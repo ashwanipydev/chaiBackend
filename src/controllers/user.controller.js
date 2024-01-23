@@ -2,7 +2,7 @@ import { asyncHandler } from "../utils/asyncHandler.js";
 import { User } from "../models/user.model.js"
 import { ApiError } from "../utils/ApiError.js"
 import { uploadOnCloudinary } from "../utils/cloudinary.js"
-
+import { ApiResponse } from "../utils/ApiResponse.js"
 
 
 const registerUser = asyncHandler( async (req, res)=>{
@@ -19,7 +19,7 @@ const registerUser = asyncHandler( async (req, res)=>{
 
     const {fullName, email, username, password} = req.body // this line only hendal data not files.
     console.log("email: ", email);
-    console.log("password: ", password)
+    console.log(req.body)
 
     // file upload ke liya multer ues kar rhae hani  tho upload ko rutes m imort kana padhe ga iska code hmne routes wali file m kiya .
 
@@ -40,7 +40,7 @@ const registerUser = asyncHandler( async (req, res)=>{
 
     // check if user already exists: username , email is ke liya user chaiy or ya h models k pass import karo phele kounki user mogooes s bana h isliy y possbil h.
     
-    const existedUser = User.findOne({
+    const existedUser = await User.findOne({
         $or : [{ username },{ email }] // kounki user mogooes s create hua h islya findone istamal kar pye or apni query likh paye hmm {username} de skthe tha par hmm username or email par check karna tha tho hmm ye snystax fowlo karna padha keyword "opretor like $or" or bhi h .
     })
 
@@ -51,9 +51,14 @@ const registerUser = asyncHandler( async (req, res)=>{
     // check for images, check for avater:  req.body jasi hmmme data deta h par hmne route me middlewear laga diya who bhi hmme option deta he like req.files
     
     const avatarLocalPath = req.files?.avatar[0]?.path //ye hmrhe localserver par h.
-    console.log(avatarLocalPath);
-    const coverImageLocalPath = req.files?.coverImage[0]?.path //ye hmrhe localserver par h.
-    console.log(coverImageLocalPath);
+    // console.log(avatarLocalPath);
+    // const coverImageLocalPath = req.files?.coverImage[0]?.path //ye hmrhe localserver par h.
+    // console.log(coverImageLocalPath);
+
+    let coverImageLocalPath;
+    if (req.files && Array.isArray(req.files.coverImage) && req.files.coverImage.length > 0) {
+        coverImageLocalPath = req.files.coverImage[0].path
+    }
 
     if (!avatarLocalPath) {
         throw new ApiError(400, "Avater is required")
@@ -62,7 +67,7 @@ const registerUser = asyncHandler( async (req, res)=>{
     // upload them to cloudinary, avater: upload ke liya cloudinary wali file import kana padag karo phis 
 
     const avatar = await uploadOnCloudinary(avatarLocalPath)
-    const coverImage = await uploadOnCloudinary(coverImageLocalPath)
+    const coverImage = await uploadOnCloudinary(coverImageLocalPath) 
 
     if (!avatar) {
         throw new ApiError(400, "Avater is required")
@@ -70,14 +75,32 @@ const registerUser = asyncHandler( async (req, res)=>{
 
     // create user object - create entry in db: User.creatae({})
 
-    const user = User.create({
+    const user = await User.create({
     fullName,
     avatar: avatar.url,
-    coverImage: coverImage.url || "",
+    coverImage: coverImage?.url || "",
     email,
     password,
     username: username.toLowerCase()
    })
+
+   //* check for usr creation : phela user create hua h ya nhai iske liya methed hai .findById because mongoDB add id too every user.
+   //* remove password and refresh token field from response
+   const createdUser = await User.findById(user._id).select(
+    "-password -refreshToken"
+   )
+   
+           
+
+    if (!createdUser) {
+        throw new ApiError(500, "Something went wrong while registering the user")
+    }
+
+    //* return res : is keliya bi apiresponse file import kari pade gi but ye ise thare se hogi
+    return  res.status(201).json(
+        new ApiResponse(200, createdUser, "user is created susscefull")
+    )
+
 })
 
 export  { registerUser }
